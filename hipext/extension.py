@@ -310,8 +310,7 @@ class BuildExtension(build_ext, object):
 
                 # Hipify source
                 if HIP_MODE:
-                    from pyHIPIFY.hipify_python import preprocessor
-                    from pyHIPYFY.cli import is_hip_clang
+                    from pyHIPIFY.hipify_python import preprocessor, is_hip_clang
 
                     output_directory = '/tmp'
                     stats = {"unsupported_calls": [], "kernel_launches": []}
