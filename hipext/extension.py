@@ -42,6 +42,7 @@ def _find_cuda_home():
         DEVICE_COMPILER = 'hcc'
         COMMON_NVCC_FLAGS = []
         HIP_MODE = True
+        print(f'Found rocm home in {cuda_home}')
 
     if cuda_home is None:
         # Guess #2
@@ -315,13 +316,14 @@ class BuildExtension(build_ext, object):
                     output_directory = '/tmp'
                     stats = {"unsupported_calls": [], "kernel_launches": []}
 
+                    new_src = os.path.join(output_directory, src)
                     preprocessor(
-                        output_directory,
                         src,
+                        new_src,
                         stats,
                         hip_clang_launch=is_hip_clang()
                     )
-                    src = os.path.join(output_directory, src)
+                    src = new_src
 
                 original_compile(obj, src, ext, cc_args, cflags, pp_opts)
             finally:
@@ -557,8 +559,11 @@ def include_paths(cuda=False):
     Returns:
         A list of include path strings.
     '''
-    here = os.path.abspath(__file__)
-    torch_path = os.path.dirname(os.path.dirname(here))
+    import torch
+
+    here = os.path.abspath(torch.__file__)
+    # torch_path = os.path.dirname(os.path.dirname(here))
+    torch_path = os.path.dirname(here)
     lib_include = os.path.join(torch_path, 'include')
     paths = [
         lib_include,
