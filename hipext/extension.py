@@ -22,12 +22,27 @@ from setuptools.command.build_ext import build_ext
 
 IS_WINDOWS = sys.platform == 'win32'
 
+HIP_MODE = False
 BUILD_NAMEDTENSOR = os.getenv('BUILD_NAMEDTENSOR', '').upper() == '1'
+DEVICE_COMPILER = 'nvcc'
+
 
 def _find_cuda_home():
     '''Finds the CUDA install path.'''
+    global DEVICE_COMPILER
+    global COMMON_NVCC_FLAGS
+    global HIP_MODE
+
     # Guess #1
     cuda_home = os.environ.get('CUDA_HOME') or os.environ.get('CUDA_PATH')
+    rocm_home = os.environ.get('ROCM_HOME') or os.environ.get('ROCM_PATH')
+
+    if cuda_home is None and rocm_home is not None:
+        cuda_home = rocm_home
+        DEVICE_COMPILER = 'hcc'
+        COMMON_NVCC_FLAGS = []
+        HIP_MODE = True
+
     if cuda_home is None:
         # Guess #2
         try:
@@ -51,6 +66,16 @@ def _find_cuda_home():
     if cuda_home and not torch.cuda.is_available():
         print("No CUDA runtime is found, using CUDA_HOME='{}'".format(cuda_home))
     return cuda_home
+
+
+def _find_cudnn_home():
+    cudnn_home = os.environ.get('CUDNN_HOME') or os.environ.get('CUDNN_PATH')
+    miopen_home = os.environ.get('MIOPEN_HOME') or os.environ.get('MIOPEN_PATH')
+
+    if cudnn_home is None and miopen_home is not None:
+        return miopen_home
+
+    return cudnn_home
 
 
 MINIMUM_GCC_VERSION = (4, 9, 0)
@@ -88,7 +113,7 @@ with compiling PyTorch from source.
                               !! WARNING !!
 '''
 CUDA_HOME = _find_cuda_home()
-CUDNN_HOME = os.environ.get('CUDNN_HOME') or os.environ.get('CUDNN_PATH')
+CUDNN_HOME = _find_cudnn_home()
 # PyTorch releases have the version pattern major.minor.patch, whereas when
 # PyTorch is built from source, we append the git commit hash, which gives
 # it the below pattern.
@@ -260,20 +285,44 @@ class BuildExtension(build_ext, object):
             try:
                 original_compiler = self.compiler.compiler_so
                 if _is_cuda_file(src):
-                    nvcc = _join_cuda_home('bin', 'nvcc')
+                    nvcc = _join_cuda_home('bin', DEVICE_COMPILER)
+
                     if not isinstance(nvcc, list):
                         nvcc = [nvcc]
+
                     self.compiler.set_executable('compiler_so', nvcc)
+
                     if isinstance(cflags, dict):
                         cflags = cflags['nvcc']
+
+                    arch_flags = []
+                    if not HIP_MODE:
+                        arch_flags = _get_cuda_arch_flags(cflags)
+
                     cflags = COMMON_NVCC_FLAGS + ['--compiler-options',
-                                                  "'-fPIC'"] + cflags + _get_cuda_arch_flags(cflags)
+                                                  "'-fPIC'"] + cflags + arch_flags
                 elif isinstance(cflags, dict):
                     cflags = cflags['cxx']
                 # NVCC does not allow multiple -std to be passed, so we avoid
                 # overriding the option if the user explicitly passed it.
                 if not any(flag.startswith('-std=') for flag in cflags):
                     cflags.append('-std=c++11')
+
+                # Hipify source
+                if HIP_MODE:
+                    from pyHIPIFY.hipify_python import preprocessor
+                    from pyHIPYFY.cli import is_hip_clang
+
+                    output_directory = '/tmp'
+                    stats = {"unsupported_calls": [], "kernel_launches": []}
+
+                    preprocessor(
+                        output_directory,
+                        src,
+                        stats,
+                        hip_clang_launch=is_hip_clang()
+                    )
+                    src = os.path.join(output_directory, src)
 
                 original_compile(obj, src, ext, cc_args, cflags, pp_opts)
             finally:
@@ -316,7 +365,7 @@ class BuildExtension(build_ext, object):
                     src = src_list[0]
                     obj = obj_list[0]
                     if _is_cuda_file(src):
-                        nvcc = _join_cuda_home('bin', 'nvcc')
+                        nvcc = _join_cuda_home('bin', DEVICE_COMPILER)
                         if isinstance(self.cflags, dict):
                             cflags = self.cflags['nvcc']
                         elif isinstance(self.cflags, list):
@@ -769,8 +818,13 @@ def load_inline(name,
 
     if cuda_sources:
         cuda_sources.insert(0, '#include <torch/types.h>')
-        cuda_sources.insert(1, '#include <cuda.h>')
-        cuda_sources.insert(2, '#include <cuda_runtime.h>')
+
+        if not HIP_MODE:
+            cuda_sources.insert(1, '#include <cuda.h>')
+            cuda_sources.insert(2, '#include <cuda_runtime.h>')
+        else:
+            cuda_sources.insert(1, '#include <hip.h>')
+            cuda_sources.insert(2, '#include <hip_runtime.h>')
 
         cuda_source_path = os.path.join(build_directory, 'cuda.cu')
         with open(cuda_source_path, 'w') as cuda_source_file:
@@ -1216,6 +1270,7 @@ def _join_cuda_home(*paths):
     if CUDA_HOME is None:
         raise EnvironmentError('CUDA_HOME environment variable is not set. '
                                'Please set it to your CUDA install root.')
+
     return os.path.join(CUDA_HOME, *paths)
 
 

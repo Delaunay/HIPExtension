@@ -3,15 +3,15 @@ from setuptools import setup
 
 if __name__ == '__main__':
     setup(
-        name='pyHIPIFY',
+        name='HIPExtension',
         version='0.0.0',
-        description='Simple utility to transform CUDA source into HIP source',
+        description='Simple HIPExtension for setuptools',
         author='',
         package_data={
-            'pyHIPIFY': ['*']
+            'hipext': ['*']
         },
         packages=[
-            'pyHIPIFY',
+            'hipext',
         ],
         setup_requires=['setuptools']
     )
