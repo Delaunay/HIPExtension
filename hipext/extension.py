@@ -26,6 +26,13 @@ HIP_MODE = False
 BUILD_NAMEDTENSOR = os.getenv('BUILD_NAMEDTENSOR', '').upper() == '1'
 DEVICE_COMPILER = 'nvcc'
 
+COMMON_NVCC_FLAGS = [
+    '-D__CUDA_NO_HALF_OPERATORS__',
+    '-D__CUDA_NO_HALF_CONVERSIONS__',
+    '-D__CUDA_NO_HALF2_OPERATORS__',
+    '--expt-relaxed-constexpr'
+]
+
 
 def _find_cuda_home():
     '''Finds the CUDA install path.'''
@@ -121,14 +128,6 @@ CUDNN_HOME = _find_cudnn_home()
 BUILT_FROM_SOURCE_VERSION_PATTERN = re.compile(r'\d+\.\d+\.\d+\w+\+\w+')
 
 COMMON_MSVC_FLAGS = ['/MD', '/wd4819', '/EHsc']
-
-COMMON_NVCC_FLAGS = [
-    '-D__CUDA_NO_HALF_OPERATORS__',
-    '-D__CUDA_NO_HALF_CONVERSIONS__',
-    '-D__CUDA_NO_HALF2_OPERATORS__',
-    '--expt-relaxed-constexpr'
-]
-
 
 JIT_EXTENSION_VERSIONER = ExtensionVersioner()
 
@@ -297,13 +296,15 @@ class BuildExtension(build_ext, object):
                         cflags = cflags['nvcc']
 
                     arch_flags = []
+
                     if not HIP_MODE:
                         arch_flags = _get_cuda_arch_flags(cflags)
+                        cflags = COMMON_NVCC_FLAGS + [
+                            '--compiler-options', "'-fPIC'"] + cflags + arch_flags
 
-                    cflags = COMMON_NVCC_FLAGS + ['--compiler-options',
-                                                  "'-fPIC'"] + cflags + arch_flags
                 elif isinstance(cflags, dict):
                     cflags = cflags['cxx']
+
                 # NVCC does not allow multiple -std to be passed, so we avoid
                 # overriding the option if the user explicitly passed it.
                 if not any(flag.startswith('-std=') for flag in cflags):
