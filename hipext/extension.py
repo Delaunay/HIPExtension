@@ -46,7 +46,7 @@ def _find_cuda_home():
 
     if cuda_home is None and rocm_home is not None:
         cuda_home = rocm_home
-        DEVICE_COMPILER = 'hcc'
+        DEVICE_COMPILER = 'hipcc'
         COMMON_NVCC_FLAGS = [
             '-hc',
             '-D__HIPCC__',
@@ -314,7 +314,7 @@ class BuildExtension(build_ext, object):
                     if isinstance(cflags, dict):
                         cflags = cflags['nvcc']
 
-                    arch_flags = []
+                    cflags = COMMON_NVCC_FLAGS
 
                     if not HIP_MODE:
                         arch_flags = _get_cuda_arch_flags(cflags)
@@ -551,7 +551,9 @@ def CUDAExtension(name, sources, *args, **kwargs):
     kwargs['library_dirs'] = library_dirs
 
     libraries = kwargs.get('libraries', [])
-    libraries.append('cudart')
+    if not HIP_MODE:
+        libraries.append('cudart')
+    
     if IS_WINDOWS:
         libraries.append('c10')
         libraries.append('c10_cuda')
