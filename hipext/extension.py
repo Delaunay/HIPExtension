@@ -47,7 +47,26 @@ def _find_cuda_home():
     if cuda_home is None and rocm_home is not None:
         cuda_home = rocm_home
         DEVICE_COMPILER = 'hcc'
-        COMMON_NVCC_FLAGS = []
+        COMMON_NVCC_FLAGS = [
+            '-hc',
+            '-D__HIPCC__',
+            '-D__HIP_PLATFORM_HCC__',
+            '-DUSE_ROCM',
+            # Hip Version
+            '-DHIP_VERSION_MAJOR=1',
+            '-DHIP_VERSION_MINOR=5',
+            '-DHIP_VERSION_PATH=19284',
+            '-x', 'c++',
+            '-isystem', '/opt/rocm/hcc/include',
+            '-isystem', '/opt/rocm/include/hip/hcc_detail/cuda',
+            '-isystem', '/opt/rocm/hsa/include',
+            '-isystem', '/opt/rocm/profiler/CXLActivityLogger/include',
+            '-isystem', '/opt/rocm/include',
+            # Build all supported archs
+            '-D__HIP_ARCH_GFX803__=1',
+            '-D__HIP_ARCH_GFX900__=1',
+            '-D__HIP_ARCH_GFX906__=1',
+        ]
         HIP_MODE = True
         print(f'Found rocm home in {cuda_home}')
 
